@@ -34,6 +34,9 @@ PROXY_PASSWORD = os.environ.get("PROXY_PASSWORD", "")
 PROXY_SERVER   = os.environ.get("PROXY_SERVER", "brd.superproxy.io:22225")
 ENDPOINT       = "https://crap-app.pages.dev"
 
+# Auto-detect GitHub Actions / CI — use headless=True for speed
+IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
+
 # ── CLI: work=N ───────────────────────────────────────────────────────────────
 work_num: str | None = None
 for _arg in sys.argv[1:]:
@@ -147,7 +150,7 @@ async def open_browser(username: str, node: dict, views: dict) -> bool:
 
     try:
         async with AsyncCamoufox(
-            headless=False,
+            headless=IS_CI,     # True on GitHub Actions, False locally
             geoip=True,         # timezone & locale auto-matched to proxy exit-node
             os=camoufox_os,     # fingerprint OS
             humanize=True,   
