@@ -21,24 +21,50 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      # ── Python + pip cache ────────────────────────────────────────────────
+      - name: Set up Python 3.12 (with pip cache)
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"                   # caches ~/.cache/pip automatically
+
+      # ── System deps cache ─────────────────────────────────────────────────
+      - name: Cache apt packages
+        id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-camoufox-deps-v1
 
       - name: Install system dependencies
+        if: steps.apt-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 libxi6 libxtst6 libnss3 libxrandr2
 
+      - name: Install cached apt packages (if cache hit)
+        if: steps.apt-cache.outputs.cache-hit == 'true'
+        run: sudo dpkg -i /var/cache/apt/archives/*.deb 2>/dev/null || true
+
+      # ── Python packages ───────────────────────────────────────────────────
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install camoufox[geoip] aiohttp python-dotenv
 
+      # ── Camoufox browser binary cache ────────────────────────────────────
+      - name: Cache Camoufox browser
+        id: camoufox-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/camoufox
+          key: camoufox-browser-${{ runner.os }}-v1
+
       - name: Download Camoufox browser
+        if: steps.camoufox-cache.outputs.cache-hit != 'true'
         run: python -m camoufox fetch
 
+      # ── Run ───────────────────────────────────────────────────────────────
       - name: Start virtual display
         run: |
           Xvfb :1 -screen 0 1920x1080x24 &
