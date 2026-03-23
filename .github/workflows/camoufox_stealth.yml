@@ -2,6 +2,11 @@ name: Run Camoufox Stealth (Python)
 
 on:
   workflow_dispatch:
+    inputs:
+      work:
+        description: "Work node number (e.g. 1, 2, 3)"
+        required: true
+        default: "1"
 
 jobs:
   run-bot:
@@ -9,7 +14,8 @@ jobs:
 
     env:
       PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
-      PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+      PROXY_SERVER:   ${{ secrets.PROXY_SERVER }}
+      DISPLAY: ":1"
 
     steps:
       - name: Checkout repository
@@ -23,19 +29,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            xvfb \
-            libgtk-3-0 \
-            libdbus-glib-1-2 \
-            libasound2t64 \
-            libx11-xcb1 \
-            libxcomposite1 \
-            libxcursor1 \
-            libxdamage1 \
-            libxi6 \
-            libxtst6 \
-            libnss3 \
-            libxrandr2
+          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 libxi6 libxtst6 libnss3 libxrandr2
 
       - name: Install Python dependencies
         run: |
@@ -45,5 +39,10 @@ jobs:
       - name: Download Camoufox browser
         run: python -m camoufox fetch
 
-      - name: Run stealth bot with xvfb
-        run: python camoufox_stealth.py work=1 && wait
+      - name: Start virtual display
+        run: |
+          Xvfb :1 -screen 0 1920x1080x24 &
+          sleep 2
+
+      - name: Run stealth bot
+        run: python camoufox_stealth.py work=${{ github.event.inputs.work }}
