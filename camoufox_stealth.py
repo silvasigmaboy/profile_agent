@@ -112,14 +112,17 @@ async def get_custom_countries(session: aiohttp.ClientSession) -> dict | None:
 # Browser helpers
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def block_resources(page) -> None:
-    """Block images, stylesheets and media to cut bandwidth and load time."""
+async def block_resources(context) -> None:
+    """
+    Block images, stylesheets and media on ALL pages in the context,
+    including popups.  Must be called on the context, not a page.
+    """
     async def _handler(route):
         if route.request.resource_type in ("image", "stylesheet", "media"):
             await route.abort()
         else:
             await route.continue_()
-    await page.route("**/*", _handler)
+    await context.route("**/*", _handler)
 
 
 async def perform_random_clicks(page) -> None:
@@ -162,8 +165,17 @@ async def open_browser(username: str, node: dict, views: dict) -> bool:
 
             page  = await context.new_page()
 
-            await block_resources(page)
-         
+            # ── Context-level blocking (main page + every popup) ──────────────
+            await block_resources(context)
+
+            # ── Auto-close any popup / new tab that opens ─────────────────────
+            async def _close_popup(popup):
+                try:
+                    await popup.close()
+                except Exception:
+                    pass
+            context.on("page", lambda popup: asyncio.ensure_future(_close_popup(popup)))
+
 
             print(
                 f"[w={work_num}] views={views.get('views', 0)} | "
@@ -195,7 +207,9 @@ async def open_browser(username: str, node: dict, views: dict) -> bool:
 
     except Exception as e:
         err = str(e)
-        if "Connection closed" not in err and "Browser.close" not in err:
+        # Suppress harmless cleanup / mid-navigation close errors
+        _silent = ("Connection closed", "Browser.close", "TargetClosedError", "Target closed", "Target page, context or browser has been closed")
+        if not any(s in err for s in _silent):
             print(f"[ERROR] open_browser ({node.get('link')}): {e}")
         return False
 
