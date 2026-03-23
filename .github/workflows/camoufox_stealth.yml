@@ -7,15 +7,20 @@ on:
         description: "Work node number (e.g. 1, 2, 3)"
         required: true
         default: "1"
+      duration:
+        description: "Max run time in minutes (default 300 = 5 h)"
+        required: false
+        default: "300"
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 350         # hard cap — prevents runaway jobs
 
     env:
       PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
       PROXY_SERVER:   ${{ secrets.PROXY_SERVER }}
-      DISPLAY: ":1"
+      CI: "true"                 # triggers headless=True in camoufox_stealth.py
 
     steps:
       - name: Checkout repository
@@ -29,7 +34,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 libxi6 libxtst6 libnss3 libxrandr2
+          sudo apt-get install -y --no-install-recommends libgtk-3-0 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxcomposite1 libxcursor1 libxdamage1 libxi6 libxtst6 libnss3 libxrandr2
 
       - name: Install Python dependencies
         run: |
@@ -39,10 +44,6 @@ jobs:
       - name: Download Camoufox browser
         run: python -m camoufox fetch
 
-      - name: Start virtual display
-        run: |
-          Xvfb :1 -screen 0 1920x1080x24 &
-          sleep 2
-
-      - name: Run stealth bot
+      - name: Run stealth bot (headless, no Xvfb needed)
+        timeout-minutes: ${{ fromJSON(github.event.inputs.duration || '300') }}
         run: python camoufox_stealth.py work=${{ github.event.inputs.work }}
