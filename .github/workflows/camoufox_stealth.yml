@@ -1,0 +1,53 @@
+name: Run Camoufox Stealth (Python)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    env:
+      PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+      PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgtk-3-0 \
+            libdbus-glib-1-2 \
+            libasound2t64 \
+            libx11-xcb1 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxdamage1 \
+            libxi6 \
+            libxtst6 \
+            libnss3 \
+            libxrandr2
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install camoufox[geoip] aiohttp python-dotenv
+
+      - name: Download Camoufox browser
+        run: python -m camoufox fetch
+
+      - name: Run stealth bot with xvfb
+        run: |
+          xvfb-run --auto-servernum \
+                   --server-num=1 \
+                   --server-args='-screen 0 1920x1080x24' \
+            python camoufox_stealth.py work=1
