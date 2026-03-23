@@ -46,8 +46,4 @@ jobs:
         run: python -m camoufox fetch
 
       - name: Run stealth bot with xvfb
-        run: |
-          xvfb-run --auto-servernum \
-                   --server-num=1 \
-                   --server-args='-screen 0 1920x1080x24' \
-            python camoufox_stealth.py work=1
+        run: python camoufox_stealth.py work=1 && wait
