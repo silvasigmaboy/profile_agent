@@ -2,9 +2,7 @@ name: Run Tests with Playwright and xvfb
 
 on:
   workflow_dispatch: # Allows manual triggering of the workflow
-  push:
-    branches:
-      - main # Run workflow on push to the 'main' branch
+ 
 
 jobs:
   run-traffic-command:
