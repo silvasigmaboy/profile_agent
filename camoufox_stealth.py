@@ -28,11 +28,12 @@ import aiohttp
 from dotenv import load_dotenv
 from camoufox.async_api import AsyncCamoufox
 from camoufox import DefaultAddons
+
 # ── Env ───────────────────────────────────────────────────────────────────────
 load_dotenv()
 PROXY_PASSWORD = os.environ.get("PROXY_PASSWORD", "")
-PROXY_SERVER   = os.environ.get("PROXY_SERVER", "brd.superproxy.io:22225")
-ENDPOINT       = "https://crap-app.pages.dev"
+PROXY_SERVER   = os.environ.get("PROXY_SERVER", "")
+ENDPOINT       = "https://main-managment-dashboard.idrissimahdi2020.workers.dev"
 
 # Auto-detect GitHub Actions / CI — use headless=True for speed
 IS_CI = os.environ.get("CI", "").lower() in ("true", "1")
@@ -46,24 +47,54 @@ for _arg in sys.argv[1:]:
             work_num = _digits
         break
 
+
+
+def validate_env() -> bool:
+    """Print a full config report; return False if any required var is missing."""
+    print("=" * 58)
+    print("  CAMOUFOX STEALTH BOT — STARTUP CONFIG")
+    print("=" * 58)
+    checks = [
+        ("PROXY_PASSWORD", PROXY_PASSWORD,  "password", True),
+        ("PROXY_SERVER",   PROXY_SERVER,    "proxy",           True),
+        ("ENDPOINT",       ENDPOINT,        "endpoint",               False),
+        ("CI / headless",  str(IS_CI),      str(IS_CI),             False),
+        ("work number",    work_num or "",  work_num or "<not set>",True),
+    ]
+    all_ok = True
+    for name, raw, display, required in checks:
+        ok    = bool(raw)
+        tag   = "OK " if ok else ("ERR" if required else "   ")
+        mark  = "✓" if ok else ("✗" if required else "-")
+        print(f"  [{tag}] {mark} {name:<22} → {display}")
+        if required and not ok:
+            all_ok = False
+    print("=" * 58)
+    if not all_ok:
+        print("\n[FATAL] Required env vars are missing.")
+        print("        → Add them to .env (local) or GitHub Secrets (CI).\n")
+    return all_ok
+
+
 # ── Location pool (same weights as JS) ───────────────────────────────────────
-LOCATIONS = [
-    "se", "ng", "cm", "ci", "ua", "at", "at", "fr", "ca",
-    *["us"] * 40,                           # heavy US weight
-    "fr", "fr", "fr",
-    "uk", "au", "de", "jp", "sg", "kr", "it", "es",
-    "in", "id", "ph", "th", "my", "eg", "tr", "pk", "bd",
-    "mx", "lk", "ml", "bj", "ug", "mm", "no", "pf", "np",
-    "bf", "cd", "bi", "gf", "cf", "hk", "cg",
-]
+LOCATIONS = ["us"]
 
 # ── Device / OS preferences ───────────────────────────────────────────────────
 PREFERENCES = [
     {"value": {"device": "desktop", "os": "windows"}, "weight": 20},
     # Camoufox does not support "android" — "linux" is the closest supported OS
-    {"value": {"device": "mobile",  "os": "linux"},   "weight": 100},
 ]
 
+
+# ── Referrals (Google, Socials, Direct) ───────────────────────────────────────
+REFERRERS = [
+    {"value": "", "weight": 3},                           # Direct
+    {"value": "https://www.google.com/", "weight": 0},    # Google
+    {"value": "https://m.facebook.com/", "weight": 10},  # Facebook
+    {"value": "https://l.instagram.com/", "weight": 0},   # Instagram
+    {"value": "https://t.co/", "weight": 0},              # Twitter
+    {"value": "https://bitly.com/", "weight": 50},         # Bitly
+]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -103,12 +134,40 @@ async def fetch_json(session: aiohttp.ClientSession, url: str) -> dict | None:
 
 async def get_node_info(session: aiohttp.ClientSession) -> dict | None:
     print("[INFO] Fetching node info...")
-    return await fetch_json(session, f"{ENDPOINT}/threads.json")
+    return await fetch_json(session, f"{ENDPOINT}/api/config/threads")
 
 
 async def get_custom_countries(session: aiohttp.ClientSession) -> dict | None:
     print("[INFO] Fetching custom countries...")
-    return await fetch_json(session, f"{ENDPOINT}/countries.json")
+    return await fetch_json(session, f"{ENDPOINT}/api/config/customloc")
+
+
+async def record_api_view(session: aiohttp.ClientSession, website: str) -> None:
+    url = f"{ENDPOINT}/api/views"
+    payload = {"website": website, "viewRegistred": True}
+    try:
+        async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as r:
+            if r.status != 200:
+                print(f"[METRIC ERROR] {website} → HTTP {r.status}")
+    except Exception as e:
+        print(f"[METRIC ERROR] {website} → {e}")
+
+
+async def send_discord_screenshot(session: aiohttp.ClientSession, screenshot_bytes: bytes, website: str, tz: str) -> None:
+    webhook_url = "https://discord.com/api/webhooks/1486198278486753362/LezWrKtc09Gkob57pPt9Y4acbpr4-isy66M79VU28L2o4VvgmefFQMiIQQzctyLZdH1G"
+    try:
+        data = aiohttp.FormData()
+        payload_json = {
+            "content": f"📸 **Successful View Completed**\n**Website:** `{website}`\n**Geo-Timezone:** `{tz}`"
+        }
+        data.add_field("payload_json", json.dumps(payload_json), content_type="application/json")
+        data.add_field("file", screenshot_bytes, filename="screenshot.jpg", content_type="image/jpeg")
+        
+        async with session.post(webhook_url, data=data, timeout=aiohttp.ClientTimeout(total=20)) as r:
+            if r.status not in (200, 204):
+                print(f"[DISCORD ERROR] HTTP {r.status} → {await r.text()}")
+    except Exception as e:
+        print(f"[DISCORD ERROR] {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -129,32 +188,35 @@ async def block_resources(context) -> None:
 
 
 async def perform_random_clicks(page) -> None:
-    """Single random click anywhere on the visible viewport."""
-    width  = await page.evaluate("window.innerWidth")
-    height = await page.evaluate("window.innerHeight")
-    await page.mouse.click(rand_int(0, width), rand_int(0, height))
-    await page.wait_for_timeout(rand_int(2_000, 3_000))
+    """Find a random text/link element and smoothly scroll/click on it to bypass coordinate heuristic checks."""
+    try:
+        # Avoid clicking random void coordinates. Bots do that. Humans click elements.
+        locators = await page.locator("p:visible, a:visible, h1:visible, h2:visible, h3:visible, span:visible").all()
+        if locators:
+            target = random.choice(locators)
+            await target.scroll_into_view_if_needed(timeout=2_000)
+            # humanize=True ensures this .click() uses a real bezier-curve mouse movement path!
+            await target.click(timeout=3_000, delay=rand_int(100, 300))
+        else:
+            # Fallback scroll using a realistic mouse wheel sweep
+            await page.mouse.wheel(0, rand_int(300, 900))
+    except Exception:
+        pass
+    await page.wait_for_timeout(rand_int(2_000, 4_000))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Core session
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def open_browser(username: str, node: dict, views: dict) -> bool:
-    """
-    Launch one Camoufox session for the given proxy username / node.
-    Mirrors OpenBrowser() from bot_core.js.
-    """
-    pref     = weighted_random(PREFERENCES)
-    camoufox_os = pref["os"]           # "windows" or "android"
+async def open_browser(username: str, node: dict, views: dict, session: aiohttp.ClientSession) -> bool:
 
     try:
         async with AsyncCamoufox(
-            headless=IS_CI,     # True on GitHub Actions, False locally
+            headless=False,     # True on GitHub Actions, False locally
             geoip=True,         # timezone & locale auto-matched to proxy exit-node
-            os=camoufox_os,     # fingerprint OS
-            humanize=True,   
-            exclude_addons=[DefaultAddons.UBO],    # human mouse/timing behaviour
+            humanize=True,       # human mouse/timing behaviour
+            exclude_addons=[DefaultAddons.UBO],   
             proxy={
                 "server":   f"http://{PROXY_SERVER}",
                 "username": username,
@@ -169,42 +231,61 @@ async def open_browser(username: str, node: dict, views: dict) -> bool:
             page  = await context.new_page()
 
             # ── Context-level blocking (main page + every popup) ──────────────
-            await block_resources(context)
+            #  await block_resources(context)
 
-            # ── Auto-close any popup / new tab that opens ─────────────────────
-            async def _close_popup(popup):
-                try:
-                    await popup.close()
-                except Exception:
-                    pass
-            context.on("page", lambda popup: asyncio.ensure_future(_close_popup(popup)))
+            # # ── Auto-close any popup / new tab that opens ─────────────────────
+            # async def _close_popup(popup):
+            #     try:
+            #         await popup.close()
+            #     except Exception:
+            #         pass
+            # context.on("page", lambda popup: asyncio.ensure_future(_close_popup(popup)))
 
+
+            timezone = await page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+
+            referrer = weighted_random(REFERRERS)
 
             print(
-                f"[w={work_num}] views={views.get('views', 0)} | "
+                f"[worker={work_num}] views={views.get('views', 0)} | "
                 f"site={node.get('link')} | "
-                f"custom_loc={node.get('custom_location')} | "
+                f"tz={timezone} | "
+                f"ref={referrer or 'Direct'} | "
                 f"bots={node.get('bots')} | "
-                f"device={pref['device']}"
             )
 
-            # Navigate
-            await page.goto(node["link"], wait_until="load")
-
-            # Wait for network to settle (mirrors JS .catch(()=>{}))
+            # Navigate with referral header (domcontentloaded is massively faster than load)
+            goto_args = {"wait_until": "domcontentloaded", "timeout": 25_000}
+            if referrer:
+                goto_args["referer"] = referrer
+                
             try:
-                await page.wait_for_load_state("networkidle", timeout=30_000)
+                await page.goto(node["link"], **goto_args)
+            except Exception as e:
+                print(f"[ERROR] Proxy slow or blocked loading {node['link']} → {e}")
+                return False
+
+            # Let network naturally settle, but do NOT stall for 30s if ads/telemetry keep firing!
+            try:
+                await page.wait_for_load_state("networkidle", timeout=3_000)
             except Exception:
                 pass
 
-            # Random initial wait — simulate human reading time (5-15 s)
-            await page.wait_for_timeout(rand_int(5_000, 15_000))
-
-            # One random click
+            # Random initial wait — simulate human reading time (3-8 s instead of 5-15s)
+            await page.wait_for_timeout(rand_int(3_000, 8_000))
             await perform_random_clicks(page)
+            await page.wait_for_timeout(rand_int(3_000, 8_000))
+            await perform_random_clicks(page)
+            # Dwell time (reduced standard deviation for faster pacing: 10-30s instead of 15-60s)
+            await page.wait_for_timeout(rand_int(30_000, 60_000))
 
-            # Dwell time (15-60 s)
-            await page.wait_for_timeout(rand_int(15_000, 60_000))
+            # Take full screenshot & push to Discord right before shutting down Playwright!
+            try:
+                # We use high JPEG compression to guarantee it fits easily over Discord limits
+                screenshot = await page.screenshot(type="jpeg", quality=60, full_page=True, timeout=10_000)
+                await send_discord_screenshot(session, screenshot, node.get("link"), timezone)
+            except Exception as e:
+                print(f"[SCREENSHOT ERROR] Failed to capture or send: {e}")
 
             return True
 
@@ -221,10 +302,10 @@ async def open_browser(username: str, node: dict, views: dict) -> bool:
 # Task pool — mirrors tasksPoll()
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def tasks_poll(node: dict, countries: dict | None, views: dict) -> None:
+async def tasks_poll(node: dict, countries: dict | None, views: dict, session: aiohttp.ClientSession) -> None:
     bot_count = int(node.get("bots") or 1)
 
-    default_locs  = ["se", "fr", "us"]
+    default_locs  = ["us"]
     custom_locs   = (
         countries.get("customLocations", default_locs)
         if countries
@@ -237,12 +318,14 @@ async def tasks_poll(node: dict, countries: dict | None, views: dict) -> None:
         else:
             location = random.choice(LOCATIONS)
 
-        session_id = generate_session_id(50)
+        session_id = generate_session_id(100)
         username   = (
             f"brd-customer-hl_19cb0fe8-zone-mw"
             f"-country-{location}-session-{session_id}"
         )
-        await open_browser(username, node, views)
+        success = await open_browser(username, node, views, session)
+        if success:
+            await record_api_view(session, node.get("link"))
 
     await asyncio.gather(*[_one_task() for _ in range(bot_count)])
 
@@ -252,9 +335,14 @@ async def tasks_poll(node: dict, countries: dict | None, views: dict) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def run_tasks() -> None:
+    # ── Config check — printed first thing on every run ───────────────────────
+    if not validate_env():
+        return
+
     if work_num is None:
         print("[ERROR] No work number provided. Usage: python camoufox_stealth.py work=1")
         return
+
 
     async with aiohttp.ClientSession() as http:
 
@@ -298,7 +386,7 @@ async def run_tasks() -> None:
                     (v for v in view_log if v["node"].get("link") == node.get("link")),
                     {"views": 0},
                 )
-                await tasks_poll(node, countries, vlog)
+                await tasks_poll(node, countries, vlog, http)
 
             await asyncio.gather(*[_run_node(k) for k in keys])
 
