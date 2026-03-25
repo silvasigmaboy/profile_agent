@@ -50,9 +50,8 @@ jobs:
       - name: Download Camoufox browser
         run: python -m camoufox fetch
 
-      - name: Run stealth bot (headless, no Xvfb needed)
+      - name: Run stealth bot 
         timeout-minutes: ${{ fromJSON(github.event.inputs.duration || '300') }}        
         run: |
-          xvfb-run --auto-servernum --server-num=1 --server-args='-screen 0 1920x1080x24' python camoufox_stealth.py work=${{ github.event.inputs.work }} &
-          wait
+          xvfb-run --auto-servernum --server-num=1 --server-args='-screen 0 1920x1080x24' python -u camoufox_stealth.py work=${{ github.event.inputs.work }}
     
