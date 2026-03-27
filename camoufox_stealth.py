@@ -251,11 +251,12 @@ async def open_browser(username: str, node: dict, views: dict, session: aiohttp.
                 f"site={node.get('link')} | "
                 f"tz={timezone} | "
                 f"ref={referrer or 'Direct'} | "
+                f"list={node.get('countriesListName', 'default_legacy')} | "
                 f"bots={node.get('bots')} | "
             )
 
-            # Navigate with referral header (domcontentloaded is massively faster than load)
-            goto_args = {"wait_until": "domcontentloaded", "timeout": 25_000}
+            # Navigate with referral header (increased timeout to 60s for slow proxy nodes)
+            goto_args = {"wait_until": "domcontentloaded", "timeout": 60_000}
             if referrer:
                 goto_args["referer"] = referrer
                 
@@ -305,19 +306,15 @@ async def open_browser(username: str, node: dict, views: dict, session: aiohttp.
 async def tasks_poll(node: dict, countries: dict | None, views: dict, session: aiohttp.ClientSession) -> None:
     bot_count = int(node.get("bots") or 1)
 
-    default_locs  = ["us"]
-    custom_locs   = (
-        countries.get("customLocations", default_locs)
-        if countries
-        else default_locs
-    )
+    # API returns { "customLocations": { "listName": [...] } }
+    all_lists    = (countries or {}).get("customLocations", {})
+    list_name    = node.get("countriesListName", "default_legacy")
+    named_list   = all_lists.get(list_name)
+    fallback     = all_lists.get("default_legacy")
+    country_pool = named_list if named_list is not None else (fallback if fallback is not None else LOCATIONS)
 
     async def _one_task():
-        if node.get("custom_location"):
-            location = random.choice(custom_locs)
-        else:
-            location = random.choice(LOCATIONS)
-
+        location   = random.choice(country_pool)
         session_id = generate_session_id(100)
         username   = (
             f"brd-customer-hl_19cb0fe8-zone-mw"
