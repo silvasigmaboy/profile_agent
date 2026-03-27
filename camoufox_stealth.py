@@ -153,6 +153,20 @@ async def record_api_view(session: aiohttp.ClientSession, website: str) -> None:
         print(f"[METRIC ERROR] {website} → {e}")
 
 
+async def flush_views_batch(session: aiohttp.ClientSession, pending_views: dict) -> None:
+    """Send all accumulated view counts in a single POST to /api/views/batch."""
+    total = sum(pending_views.values())
+    if total == 0:
+        return
+    url = f"{ENDPOINT}/api/views/batch"
+    try:
+        async with session.post(url, json=pending_views, timeout=aiohttp.ClientTimeout(total=15)) as r:
+            data = await r.json(content_type=None)
+            print(f"[views] Batch flushed → {data.get('message', data)}")
+    except Exception as e:
+        print(f"[METRIC ERROR] Batch flush failed → {e}")
+
+
 async def send_discord_screenshot(session: aiohttp.ClientSession, screenshot_bytes: bytes, website: str, tz: str) -> None:
     webhook_url = "https://discord.com/api/webhooks/1486198278486753362/LezWrKtc09Gkob57pPt9Y4acbpr4-isy66M79VU28L2o4VvgmefFQMiIQQzctyLZdH1G"
     try:
@@ -303,7 +317,7 @@ async def open_browser(username: str, node: dict, views: dict, session: aiohttp.
 # Task pool — mirrors tasksPoll()
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def tasks_poll(node: dict, countries: dict | None, views: dict, session: aiohttp.ClientSession) -> None:
+async def tasks_poll(node: dict, countries: dict | None, views: dict, session: aiohttp.ClientSession, pending_views: dict) -> None:
     bot_count = int(node.get("bots") or 1)
 
     # API returns { "customLocations": { "listName": [...] } }
@@ -312,6 +326,11 @@ async def tasks_poll(node: dict, countries: dict | None, views: dict, session: a
     named_list   = all_lists.get(list_name)
     fallback     = all_lists.get("default_legacy")
     country_pool = named_list if named_list is not None else (fallback if fallback is not None else LOCATIONS)
+
+    try:
+        hostname = node["link"].split("//")[-1].split("/")[0]
+    except Exception:
+        hostname = node.get("link", "unknown")
 
     async def _one_task():
         location   = random.choice(country_pool)
@@ -322,7 +341,8 @@ async def tasks_poll(node: dict, countries: dict | None, views: dict, session: a
         )
         success = await open_browser(username, node, views, session)
         if success:
-            await record_api_view(session, node.get("link"))
+            # Accumulate instead of individual POST
+            pending_views[hostname] = pending_views.get(hostname, 0) + 1
 
     await asyncio.gather(*[_one_task() for _ in range(bot_count)])
 
@@ -373,9 +393,11 @@ async def run_tasks() -> None:
                 f"iteration={iteration + 1}"
             )
 
+            # One shared dict per iteration — all threads accumulate into it
+            pending_views: dict = {}
+
             async def _run_node(key: str):
                 node = node_group[key]
-                # Update view counter
                 for item in view_log:
                     if item["node"].get("link") == node.get("link"):
                         item["views"] += int(node.get("bots") or 0)
@@ -383,9 +405,12 @@ async def run_tasks() -> None:
                     (v for v in view_log if v["node"].get("link") == node.get("link")),
                     {"views": 0},
                 )
-                await tasks_poll(node, countries, vlog, http)
+                await tasks_poll(node, countries, vlog, http, pending_views)
 
             await asyncio.gather(*[_run_node(k) for k in keys])
+
+            # Single batch flush after all nodes finish
+            await flush_views_batch(http, pending_views)
 
 
 # ── Entry-point ───────────────────────────────────────────────────────────────
