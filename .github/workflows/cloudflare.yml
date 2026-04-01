@@ -1,59 +1,41 @@
-name: Expose TCP Proxy
+name: GitHub Proxy Tunnel
 
 on:
   workflow_dispatch:
 
 jobs:
-  run-proxy:
+  proxy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Squid Proxy
+      - name: Install Squid
         run: |
           sudo apt-get update
           sudo apt-get install -y squid
-          
-          # Minimal squid config (open proxy)
           sudo truncate -s 0 /etc/squid/squid.conf
           echo "http_port 3128" | sudo tee -a /etc/squid/squid.conf
           echo "http_access allow all" | sudo tee -a /etc/squid/squid.conf
-          
           sudo service squid restart
-          sleep 3
-          
-          echo "Squid status:"
-          sudo service squid status
 
-      - name: Install Cloudflared
-        run: |
-          curl -L --output cloudflared.deb \
-          https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-          sudo dpkg -i cloudflared.deb
+      - name: Setup cloudflared
+        uses: AnimMouse/setup-cloudflared@v2
 
-      - name: Start Cloudflare TCP Tunnel
+      - name: Start Cloudflare Tunnel
+        uses: AnimMouse/setup-cloudflared/tunnel@v2
+        with:
+          cloudflare_tunnel_credential: ${{ secrets.CLOUDFLARE_TUNNEL_CREDENTIAL }}
+          cloudflare_tunnel_configuration: ${{ vars.CLOUDFLARE_TUNNEL_CONFIGURATION }}
+          cloudflare_tunnel_id: ${{ vars.CLOUDFLARE_TUNNEL_ID }}
+
+      - name: Show Proxy Info
         run: |
-          echo "Starting TCP tunnel..."
-          cloudflared tunnel --url tcp://127.0.0.1:3128 > tunnel.log 2>&1 &
-          
-          echo "Waiting for tunnel to initialize..."
-          sleep 20
-          
-          echo "========== TUNNEL LOG =========="
-          cat tunnel.log
-          echo "================================"
-          
-          PROXY=$(grep -oE 'tcp://[0-9a-zA-Z\.-]+:[0-9]+' tunnel.log | head -n 1)
-          
-          echo ""
-          echo "=========== YOUR PROXY ==========="
-          echo "Full format: $PROXY"
-          echo "Proxy:Port : ${PROXY#tcp://}"
-          echo "=================================="
-          
-          echo ""
-          echo "Testing proxy..."
-          curl -x http://${PROXY#tcp://} https://api.ipify.org || echo "Proxy test failed"
-          
-          echo ""
-          echo "Keeping action alive for 6 hours..."
-          sleep 21600
+          echo "Your proxy is available via Cloudflare TCP tunnel"
+          echo "Use Cloudflare Access or TCP hostname from dashboard"
+          curl https://api.ipify.org
+
+      - name: Keep Alive
+        run: sleep 21600
+
+      - name: Shutdown Tunnel
+        if: '! cancelled()'
+        uses: AnimMouse/setup-cloudflared/shutdown@v2
