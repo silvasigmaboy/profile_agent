@@ -1,4 +1,4 @@
-name: Expose Proxy via LocalTunnel
+name: Expose Proxy via Pinggy
 
 on:
   workflow_dispatch:
@@ -17,14 +17,11 @@ jobs:
           echo "http_access allow all" | sudo tee -a /etc/squid/squid.conf
           sudo service squid restart
 
-      - name: Install LocalTunnel
-        run: npm install -g localtunnel
-
-      - name: Start Tunnel
+      - name: Start Pinggy Tunnel
         run: |
-          lt --port 3128 > tunnel.log 2>&1 &
+          ssh -p 443 -R0:localhost:3128 tcp@a.pinggy.io > tunnel.log 2>&1 &
           sleep 10
-          echo "====== URL ======"
+          echo "====== PROXY ======"
           cat tunnel.log
-          echo "================="
+          echo "==================="
           sleep 21600
