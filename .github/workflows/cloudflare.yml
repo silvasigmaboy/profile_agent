@@ -1,4 +1,4 @@
-name: Expose Proxy TCP
+name: Expose TCP Proxy
 
 on:
   workflow_dispatch:
@@ -6,29 +6,54 @@ on:
 jobs:
   run-proxy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Install Squid Proxy
         run: |
           sudo apt-get update
           sudo apt-get install -y squid
           
+          # Minimal squid config (open proxy)
           sudo truncate -s 0 /etc/squid/squid.conf
           echo "http_port 3128" | sudo tee -a /etc/squid/squid.conf
           echo "http_access allow all" | sudo tee -a /etc/squid/squid.conf
+          
           sudo service squid restart
+          sleep 3
+          
+          echo "Squid status:"
+          sudo service squid status
 
       - name: Install Cloudflared
         run: |
-          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          curl -L --output cloudflared.deb \
+          https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared.deb
 
-      - name: Start TCP Tunnel
+      - name: Start Cloudflare TCP Tunnel
         run: |
+          echo "Starting TCP tunnel..."
           cloudflared tunnel --url tcp://127.0.0.1:3128 > tunnel.log 2>&1 &
-          sleep 10
           
-          echo "====== PROXY ======"
-          cat tunnel.log | grep tcp
-          echo "==================="
+          echo "Waiting for tunnel to initialize..."
+          sleep 20
           
+          echo "========== TUNNEL LOG =========="
+          cat tunnel.log
+          echo "================================"
+          
+          PROXY=$(grep -oE 'tcp://[0-9a-zA-Z\.-]+:[0-9]+' tunnel.log | head -n 1)
+          
+          echo ""
+          echo "=========== YOUR PROXY ==========="
+          echo "Full format: $PROXY"
+          echo "Proxy:Port : ${PROXY#tcp://}"
+          echo "=================================="
+          
+          echo ""
+          echo "Testing proxy..."
+          curl -x http://${PROXY#tcp://} https://api.ipify.org || echo "Proxy test failed"
+          
+          echo ""
+          echo "Keeping action alive for 6 hours..."
           sleep 21600
