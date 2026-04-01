@@ -1,10 +1,10 @@
-name: GitHub Proxy Tunnel
+name: Expose Proxy via LocalTunnel
 
 on:
   workflow_dispatch:
 
 jobs:
-  proxy:
+  tunnel:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,25 +17,14 @@ jobs:
           echo "http_access allow all" | sudo tee -a /etc/squid/squid.conf
           sudo service squid restart
 
-      - name: Setup cloudflared
-        uses: AnimMouse/setup-cloudflared@v2
+      - name: Install LocalTunnel
+        run: npm install -g localtunnel
 
-      - name: Start Cloudflare Tunnel
-        uses: AnimMouse/setup-cloudflared/tunnel@v2
-        with:
-          cloudflare_tunnel_credential: ${{ secrets.CLOUDFLARE_TUNNEL_CREDENTIAL }}
-          cloudflare_tunnel_configuration: ${{ vars.CLOUDFLARE_TUNNEL_CONFIGURATION }}
-          cloudflare_tunnel_id: ${{ vars.CLOUDFLARE_TUNNEL_ID }}
-
-      - name: Show Proxy Info
+      - name: Start Tunnel
         run: |
-          echo "Your proxy is available via Cloudflare TCP tunnel"
-          echo "Use Cloudflare Access or TCP hostname from dashboard"
-          curl https://api.ipify.org
-
-      - name: Keep Alive
-        run: sleep 21600
-
-      - name: Shutdown Tunnel
-        if: '! cancelled()'
-        uses: AnimMouse/setup-cloudflared/shutdown@v2
+          lt --port 3128 > tunnel.log 2>&1 &
+          sleep 10
+          echo "====== URL ======"
+          cat tunnel.log
+          echo "================="
+          sleep 21600
