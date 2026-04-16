@@ -1,7 +1,6 @@
 import { chromium } from "playwright";
 import { newInjectedContext } from "fingerprint-injector";
 import { checkTz } from "./tz_px_noproxy.js";
-import "dotenv/config";
 import fs from "fs";
 import axios from "axios";
 import FormData from "form-data";
