@@ -2,7 +2,6 @@ import { chromium } from "playwright";
 import { newInjectedContext } from "fingerprint-injector";
 import { checkTz } from "./tz_px_noproxy.js";
 import fs from "fs";
-import fs from "fs";
 
 // new approach
 // no proxy used
