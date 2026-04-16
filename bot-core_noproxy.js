@@ -2,8 +2,7 @@ import { chromium } from "playwright";
 import { newInjectedContext } from "fingerprint-injector";
 import { checkTz } from "./tz_px_noproxy.js";
 import fs from "fs";
-import axios from "axios";
-import FormData from "form-data";
+import fs from "fs";
 
 // new approach
 // no proxy used
@@ -404,11 +403,16 @@ const OpenBrowser = async (username, currentNode, countries, views) => {
       await page.screenshot({ path: screenshotPath });
 
       if (DISCORD_WEBHOOK_URL) {
-        const form = new FormData();
-        form.append("content", `📸 View registered from ${timezone}`);
-        form.append("file", fs.createReadStream(screenshotPath));
-        await axios.post(DISCORD_WEBHOOK_URL, form, {
-          headers: form.getHeaders(),
+        const formData = new FormData();
+        formData.append("content", `📸 View registered from ${timezone}`);
+        
+        const fileBuffer = fs.readFileSync(screenshotPath);
+        const fileBlob = new Blob([fileBuffer], { type: "image/png" });
+        formData.append("file", fileBlob, "screenshot.png");
+
+        await fetch(DISCORD_WEBHOOK_URL, {
+          method: "POST",
+          body: formData,
         });
         console.log("[discord] Screenshot sent!");
       }
