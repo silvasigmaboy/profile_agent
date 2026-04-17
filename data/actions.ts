@@ -1,4 +1,4 @@
-import "dotenv/config";
+
 
 type CloudflareApiEnvelope<T> = {
   success: boolean;

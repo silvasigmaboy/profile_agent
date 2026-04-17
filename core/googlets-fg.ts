@@ -15,7 +15,6 @@ import {
   saveQuestions,
   saveSearchQueries,
 } from "../data/actions.js";
-import "dotenv/config";
 
 type ScrapedSearchResult = {
   url: string;
