@@ -25,6 +25,7 @@
     "playwright": "^1.46.0",
     "playwright-afp": "^0.0.3",
     "request-promise": "^4.2.6",
+    "tsx": "^4.21.0",
     "url": "^0.11.4"
   },
   "devDependencies": {
