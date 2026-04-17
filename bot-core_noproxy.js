@@ -379,12 +379,14 @@ const OpenBrowser = async (username, currentNode, countries, views) => {
     const noise = generateNoise();
     const page = await context.newPage();
     // add media blockers
-    await blockResources(page);
+    // await blockResources(page);
     await page.addInitScript(noisifyScript(noise));
     console.log(
       `w -> ${theworknum}| views -> ${views.views} | website -> ${currentNode.link} | list -> ${currentNode.countriesListName || "default_legacy"} | threads -> ${currentNode.bots} | Browser view from -> ${timezone} | userPreference -> ${userPreference.device}`,
     );
-    await page.goto(currentNode.link, { waitUntil: "load" });
+    const keyword = "Short-term rental permits in berlin";
+    const targetUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}`;
+    await page.goto(targetUrl, { waitUntil: "load" });
     // Wait for network to settle after page load
     await page
       .waitForLoadState("networkidle", { timeout: 30000 })
@@ -404,7 +406,7 @@ const OpenBrowser = async (username, currentNode, countries, views) => {
       if (DISCORD_WEBHOOK_URL) {
         const formData = new FormData();
         formData.append("content", `📸 View registered from ${timezone}`);
-        
+
         const fileBuffer = fs.readFileSync(screenshotPath);
         const fileBlob = new Blob([fileBuffer], { type: "image/png" });
         formData.append("file", fileBlob, "screenshot.png");
